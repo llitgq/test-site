@@ -120,10 +120,20 @@ setTimeout(() => {
 }, 1100);
 canvasEl.addEventListener("transitionend", (e) => {
   if (e.propertyName === "transform" && canvasEl.classList.contains("zoomed")) {
-    document.getElementById("base").style.visibility = "hidden";  /* 全身退场 */
-    current = "up";                                               /* 瞬间换半身动态 */
-    vids.up.classList.add("on");
-    followEnabled = true;
+    const up = vids.up;
+    /* 先等 up 真的有帧再切（手机解码慢，直接切会闪空白=人物消失）；takeOver 幂等可安全重入 */
+    const takeOver = () => {
+      document.getElementById("base").style.visibility = "hidden";
+      current = "up";
+      up.classList.add("on");
+      followEnabled = true;
+    };
+    if (up.readyState >= 2) takeOver();
+    else {
+      up.addEventListener("loadeddata", takeOver, { once: true });
+      up.addEventListener("seeked", takeOver, { once: true });
+      setTimeout(takeOver, 2000); /* 兜底：解码卡死也接管 */
+    }
   }
 }, { once: true });
 

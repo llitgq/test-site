@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>顺手 Handy — Mac 菜单栏工具箱</title>
+<meta name="description" content="顺手是 macOS 菜单栏工具箱：截图标注、OCR 提字、截屏翻译、语音输入、贴边收纳、剪贴板历史、快捷启动、图片工具、查找大文件。免费开源，识别全在本机。">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --ink: #1d1d1f; --sub: #6e6e73; --faint: #86868b;
+    --blue: #0071e3; --green: #34d849; --line: #e8e8ed; --bg: #fbfbfd;
+  }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, "SF Pro SC", "PingFang SC", "Helvetica Neue", sans-serif;
+    background: var(--bg); color: var(--ink); min-height: 100vh;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── 导航 ── */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(251,251,253,.82); backdrop-filter: blur(20px) saturate(1.4);
+    border-bottom: 1px solid rgba(0,0,0,.05);
+  }
+  .nav-in { display: flex; align-items: center; justify-content: space-between; height: 54px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-size: 18px; font-weight: 700; text-decoration: none; color: var(--ink); }
+  .brand .en { font-size: 12px; color: var(--faint); font-weight: 500; letter-spacing: .5px; }
+  nav .links { display: flex; gap: 26px; font-size: 14px; align-items: center; }
+  nav .links a { color: var(--sub); text-decoration: none; }
+  nav .links a:hover { color: var(--ink); }
+  .nav-btn {
+    background: var(--ink); color: #fff; padding: 8px 17px; border-radius: 99px;
+    text-decoration: none; font-weight: 600; font-size: 13.5px;
+  }
+  @media (max-width: 700px) { nav .links .hide-m { display: none; } }
+
+  /* ── 首屏：居中舞台 ── */
+  .hero { text-align: center; padding: clamp(48px, 9vh, 96px) 24px 0; }
+  .big-hand {
+    font-size: clamp(64px, 12vw, 96px); display: inline-block;
+    animation: wave 2.6s ease-in-out infinite; transform-origin: 50% 85%;
+  }
+  @keyframes wave { 0%,55%,100% { transform: rotate(0deg);} 68% { transform: rotate(-13deg);} 81% { transform: rotate(9deg);} }
+  h1 { font-size: clamp(38px, 7.2vw, 64px); letter-spacing: -1.5px; font-weight: 800; margin-top: 18px; line-height: 1.12; }
+  h1 em { font-style: normal; color: var(--blue); }
+  .slogan { font-size: clamp(16px, 3vw, 22px); color: #494950; margin-top: 16px; font-weight: 500; }
+  .desc { font-size: clamp(14px, 2.4vw, 15.5px); color: var(--faint); margin: 18px auto 0; max-width: 580px; line-height: 1.8; }
+  .cta-row { display: flex; gap: 13px; justify-content: center; margin: 34px 0 0; flex-wrap: wrap; }
+  .btn-primary {
+    background: var(--blue); color: #fff; font-size: clamp(15px, 2.6vw, 16.5px); font-weight: 600;
+    padding: 14px 34px; border-radius: 99px; text-decoration: none;
+    box-shadow: 0 10px 30px rgba(0,113,227,.28);
+  }
+  .btn-ghost {
+    color: var(--blue); font-size: 15px; font-weight: 600; text-decoration: none;
+    padding: 14px 20px; border-radius: 99px;
+  }
+  .meta { font-size: 13px; color: var(--faint); margin-top: 15px; }
+  .meta b { color: var(--sub); font-weight: 600; }
+
+  /* ── 产品大图：菜单栏面板 ── */
+  .shot { margin: clamp(40px, 7vh, 72px) auto 0; max-width: 640px; position: relative; }
+  .shot .cap {
+    text-align: center; font-size: 12.5px; color: var(--faint); margin-bottom: 14px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .shot .cap .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 0 3px rgba(52,216,73,.15); animation: dotGlow 2.4s ease-in-out infinite;
+  }
+  @keyframes dotGlow { 50% { box-shadow: 0 0 0 5px rgba(52,216,73,.08); } }
+  .panel {
+    width: min(360px, 92vw); margin: 0 auto clamp(64px, 10vh, 110px);
+    background: rgba(248,248,250,.96); border: 1px solid #e0e0e5; border-radius: 16px;
+    padding: 18px 15px 13px; box-shadow: 0 30px 80px rgba(0,0,0,.13);
+    animation: floaty 5.2s ease-in-out infinite;
+  }
+  @keyframes floaty { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-7px);} }
+  .p-head {
+    display: flex; flex-direction: column; align-items: center;
+    background: linear-gradient(160deg,#26262b,#131316); border-radius: 12px;
+    padding: 10px 0 12px; margin-bottom: 13px; cursor: pointer;
+  }
+  .p-head .h { font-size: 36px; }
+  .p-cols { display: flex; gap: 10px; margin-top: 2px; }
+  .p-cols > div { display: flex; flex-direction: column; gap: 1px; }
+  .p-cols .l1 { font-size: 13.5px; font-weight: 600; color: #f0f0f2; }
+  .p-cols .l2 { font-size: 10.5px; color: rgba(240,240,242,.8); }
+  .p-badge { margin-top: 9px; font-size: 10px; color: var(--green); font-weight: 700; background: rgba(52,216,73,.12); padding: 3px 11px; border-radius: 99px; }
+  .p-row { display: flex; align-items: center; gap: 10px; padding: 7.5px 10px; border-radius: 9px; font-size: 13px; }
+  .p-row .ic { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 13px; background: rgba(0,113,227,.1); }
+  .p-row .name { font-weight: 600; }
+  .p-row .key { margin-left: auto; font-size: 10.5px; color: var(--faint); font-weight: 500; }
+  .p-row .tg { margin-left: auto; width: 30px; height: 17px; border-radius: 99px; background: var(--green); position: relative; }
+  .p-row .tg::after { content: ""; position: absolute; right: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  .p-foot { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--line); }
+  .p-foot div { text-align: center; font-size: 11.5px; color: var(--sub); background: rgba(255,255,255,.65); border-radius: 8px; padding: 6px 0; font-weight: 500; }
+
+  /* ── 功能区 ── */
+  .features { padding: clamp(30px, 6vh, 64px) 0 0; }
+  .sec-head { text-align: center; margin-bottom: clamp(28px, 5vh, 52px); }
+  .sec-head .kicker { font-size: 13px; font-weight: 700; color: var(--blue); letter-spacing: 2px; }
+  .sec-head h2 { font-size: clamp(26px, 5vw, 36px); font-weight: 800; letter-spacing: -1px; margin-top: 10px; }
+  .sec-head p { color: var(--faint); margin-top: 10px; font-size: 15px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px;
+  }
+  @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: 20px;
+    padding: 26px 26px 22px; box-shadow: 0 12px 34px rgba(0,0,0,.05);
+    display: flex; flex-direction: column;
+  }
+  .card .top { display: flex; align-items: baseline; gap: 12px; }
+  .card .no { font-size: 13px; font-weight: 700; color: var(--blue); letter-spacing: 1px; }
+  .card h3 { font-size: 20px; font-weight: 750; letter-spacing: -.3px; }
+  .card p { color: var(--sub); font-size: 14px; line-height: 1.75; margin-top: 9px; }
+  .card .kbd-row { margin-top: auto; padding-top: 14px; font-size: 12.5px; color: var(--faint); display: flex; gap: 7px; align-items: center; }
+  kbd {
+    font-family: inherit; background: #f5f5f7; border: 1px solid #d8d8dd; border-bottom-width: 2px;
+    border-radius: 6px; padding: 2px 8px; font-size: 12px; color: var(--ink); font-weight: 600;
+  }
+  /* 演示舞台：等高浅灰画布 */
+  .stage {
+    margin-top: 18px; background: #f7f7fa; border: 1px solid #ececf1; border-radius: 14px;
+    height: 190px; position: relative; overflow: hidden;
+  }
+
+  /* 演示 1 · 截图标注 */
+  .demo-shot { position: absolute; inset: 0; }
+  .demo-shot .pic { position: absolute; inset: 18px; border-radius: 9px; background: linear-gradient(160deg,#b7d7e8,#dff0d8 55%,#f7e8c9); }
+  .demo-shot .sel { position: absolute; left: 34%; top: 22%; width: 46%; height: 52%; border: 2px solid var(--blue); border-radius: 4px; box-shadow: 0 0 0 9999px rgba(0,0,0,.14); animation: selIn 4.2s ease-in-out infinite; }
+  @keyframes selIn { 0%,12% { transform: scale(.4); opacity: 0; } 22%,88% { transform: scale(1); opacity: 1; } 100% { opacity: 0; } }
+  .demo-shot svg { position: absolute; left: 40%; top: 30%; width: 34%; overflow: visible; }
+  .demo-shot svg path { stroke: #ff3b30; stroke-width: 3; fill: none; stroke-linecap: round; stroke-dasharray: 120; stroke-dashoffset: 120; animation: draw 4.2s ease-in-out infinite; }
+  @keyframes draw { 30% { stroke-dashoffset: 120; } 55%,88% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; opacity: 0; } }
+
+  /* 演示 2 · OCR 提字 */
+  .demo-ocr { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 0 26px; }
+  .demo-ocr .line { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .demo-ocr .blur { flex: 1; height: 13px; border-radius: 4px; background: repeating-linear-gradient(90deg,#c9c9d1 0 10px,transparent 10px 14px); }
+  .demo-ocr .txt { flex: 1; font-weight: 600; color: var(--ink); opacity: 0; transform: translateY(6px); }
+  .demo-ocr .l1 .txt { animation: ocrIn 4.5s ease-in-out infinite; }
+  .demo-ocr .l2 .txt { animation: ocrIn 4.5s ease-in-out .5s infinite; }
+  .demo-ocr .l3 .txt { animation: ocrIn 4.5s ease-in-out 1s infinite; }
+  .demo-ocr .txt::after { content: ""; display: inline-block; width: 1.5px; height: 12px; background: var(--blue); margin-left: 2px; animation: blink 1s steps(1) infinite; }
+  @keyframes ocrIn { 0%,18% { opacity: 0; transform: translateY(6px);} 32%,90% { opacity: 1; transform: translateY(0);} 100% { opacity: 0; } }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* 演示 3 · 截屏翻译 */
+  .demo-tr { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .demo-tr .pair { width: 82%; background: #fff; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; box-shadow: 0 8px 20px rgba(0,0,0,.06); }
+  .demo-tr .zh { padding: 12px 16px; font-size: 13.5px; font-weight: 600; color: var(--sub); border-bottom: 1px solid var(--line); }
+  .demo-tr .zh span { background: linear-gradient(transparent 62%, rgba(0,113,227,.22) 0); }
+  .demo-tr .en { padding: 12px 16px; font-size: 13px; color: var(--ink); opacity: 0; }
+  .demo-tr .en { animation: trIn 4.4s ease-in-out infinite; }
+  @keyframes trIn { 0%,30% { opacity: 0; transform: translateY(4px);} 45%,90% { opacity: 1; transform: translateY(0);} 100% { opacity: 0; } }
+
+  /* 演示 4 · 语音输入 */
+  .demo-voice { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+  .demo-voice .waves { display: flex; gap: 4px; align-items: center; height: 30px; }
+  .demo-voice .waves i { width: 4px; border-radius: 3px; background: var(--blue); animation: bars 1s ease-in-out infinite; }
+  .demo-voice .waves i:nth-child(1){height:10px}.demo-voice .waves i:nth-child(2){height:20px;animation-delay:.12s}
+  .demo-voice .waves i:nth-child(3){height:28px;animation-delay:.24s}.demo-voice .waves i:nth-child(4){height:16px;animation-delay:.36s}
+  .demo-voice .waves i:nth-child(5){height:24px;animation-delay:.48s}.demo-voice .waves i:nth-child(6){height:12px;animation-delay:.6s}
+  .demo-voice .waves i:nth-child(7){height:22px;animation-delay:.72s}
+  @keyframes bars { 50% { transform: scaleY(.35); } }
+  .demo-voice .out { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .demo-voice .out span { opacity: 0; animation: chIn 4.8s ease-in-out infinite; }
+  @keyframes chIn { 8%,92% { opacity: 1; } 100% { opacity: 0; } }
+  .demo-voice .mic { position: absolute; right: 14px; bottom: 12px; font-size: 11px; color: var(--faint); background: #fff; border: 1px solid var(--line); padding: 3px 10px; border-radius: 99px; }
+
+  /* 演示 5 · 贴边收纳 */
+  .demo-tuck { position: absolute; inset: 0; }
+  .demo-tuck .screenedge { position: absolute; left: 12px; top: 16px; bottom: 16px; width: 5px; border-radius: 3px; background: #e3e3ea; }
+  .demo-tuck .win {
+    position: absolute; left: 42%; top: 20%; width: 44%; height: 60%;
+    background: #fff; border: 1px solid var(--line); border-radius: 9px;
+    box-shadow: 0 10px 26px rgba(0,0,0,.1);
+    animation: tuck 4.6s ease-in-out infinite;
+  }
+  .demo-tuck .win .bar { height: 16px; border-bottom: 1px solid var(--line); border-radius: 9px 9px 0 0; background: #f5f5f7; display: flex; gap: 4px; align-items: center; padding-left: 8px; }
+  .demo-tuck .win .bar i { width: 6px; height: 6px; border-radius: 50%; background: #d5d5dc; }
+  .demo-tuck .handle { position: absolute; left: 14px; top: 44%; width: 7px; height: 46px; border-radius: 4px; background: var(--blue); opacity: 0; animation: handleIn 4.6s ease-in-out infinite; }
+  @keyframes tuck { 0%,15% { left: 42%; opacity: 1; } 42%,80% { left: 17px; width: 44%; opacity: 1; } 92%,100% { left: 17px; opacity: 0; } }
+  @keyframes handleIn { 0%,40% { opacity: 0; } 50%,86% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* 演示 6 · 剪贴板历史 */
+  .demo-clip { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .demo-clip .list { width: 78%; background: #fff; border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 8px 20px rgba(0,0,0,.06); overflow: hidden; }
+  .demo-clip .item { padding: 10px 14px; font-size: 12.5px; color: var(--sub); border-bottom: 1px solid #f2f2f6; display: flex; gap: 8px; align-items: center; }
+  .demo-clip .item:last-child { border-bottom: none; }
+  .demo-clip .item .mini { font-size: 11px; }
+  .demo-clip .item.top { color: var(--ink); font-weight: 600; animation: clipFlash 4.2s ease-in-out infinite; }
+  @keyframes clipFlash { 0%,20% { background: #fff; } 32%,52% { background: rgba(0,113,227,.1); } 70%,100% { background: #fff; } }
+
+  /* 演示 7 · 快捷启动 */
+  .demo-launch { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px; }
+  .demo-launch .keys { display: flex; gap: 8px; }
+  .demo-launch .keys kbd { font-size: 16px; padding: 8px 13px; }
+  .demo-launch .keys kbd.hit { animation: keyHit 3.8s ease-in-out infinite; }
+  @keyframes keyHit { 0%,22% { transform: translateY(0); box-shadow: 0 2px 0 #d8d8dd; } 32%,48% { transform: translateY(2px); box-shadow: 0 0 0 #d8d8dd; background: #eef4fb; } 62%,100% { transform: translateY(0); } }
+  .demo-launch .pop {
+    width: 190px; height: 66px; background: #fff; border: 1px solid var(--line); border-radius: 11px;
+    box-shadow: 0 12px 30px rgba(0,0,0,.1); display: flex; align-items: center; gap: 11px; padding: 0 15px;
+    opacity: 0; transform: translateY(8px) scale(.96);
+    animation: popIn 3.8s ease-in-out infinite;
+  }
+  .demo-launch .pop .sq { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(150deg,#5aa9f5,#2f7de1); }
+  .demo-launch .pop .t1 { font-size: 12.5px; font-weight: 700; }
+  .demo-launch .pop .t2 { font-size: 10.5px; color: var(--faint); }
+  @keyframes popIn { 0%,44% { opacity: 0; transform: translateY(8px) scale(.96); } 58%,90% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; } }
+
+  /* 演示 8 · 图片工具 */
+  .demo-img { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 20px; }
+  .demo-img .col { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+  .demo-img .frame { width: 108px; height: 74px; border-radius: 10px; }
+  .demo-img .before { background: repeating-linear-gradient(45deg,#c7d8ea 0 14px,#b9cee4 14px 28px); }
+  .demo-img .after { background: repeating-linear-gradient(45deg,#d8e7f5 0 20px,#cfe0f2 20px 40px); }
+  .demo-img .tag { font-size: 11.5px; color: var(--faint); }
+  .demo-img .arrow { font-size: 20px; color: var(--blue); animation: nudge 1.6s ease-in-out infinite; }
+  @keyframes nudge { 50% { transform: translateX(5px); } }
+  .demo-img .save { position: absolute; bottom: 12px; font-size: 11.5px; color: var(--green); font-weight: 700; background: rgba(52,216,73,.1); padding: 3px 11px; border-radius: 99px; opacity: 0; animation: saveIn 3.2s ease-in-out infinite; }
+  @keyframes saveIn { 0%,55% { opacity: 0; } 70%,92% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* 演示 9 · 查找大文件 */
+  .demo-big { position: absolute; inset: 0; padding: 18px; display: flex; gap: 12px; }
+  .demo-big .treemap { flex: 1.3; display: grid; grid-template-columns: 3fr 2fr; grid-template-rows: 2fr 1fr 1fr; gap: 6px; }
+  .demo-big .treemap i { border-radius: 7px; animation: tmPulse 4s ease-in-out infinite; }
+  .demo-big .treemap i:nth-child(1){ background:#7fb3e8; }
+  .demo-big .treemap i:nth-child(2){ background:#a5c9ef; animation-delay:.15s }
+  .demo-big .treemap i:nth-child(3){ background:#c3d9f4; animation-delay:.3s }
+  .demo-big .treemap i:nth-child(4){ background:#dce9f9; animation-delay:.45s }
+  .demo-big .treemap i:nth-child(5){ background:#e8f0fb; animation-delay:.6s }
+  .demo-big .treemap i:nth-child(6){ background:#f0f5fc; animation-delay:.75s }
+  @keyframes tmPulse { 0%,100% { transform: scale(1);} 50% { transform: scale(.97);} }
+  .demo-big .side { flex: 1; display: flex; flex-direction: column; gap: 7px; justify-content: center; }
+  .demo-big .row { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; font-size: 11.5px; color: var(--sub); display: flex; justify-content: space-between; }
+  .demo-big .row b { color: var(--ink); }
+  .demo-big .row.hl { border-color: rgba(0,113,227,.4); animation: clipFlash 4s ease-in-out infinite; }
+
+  /* ── 理念条 ── */
+  .values { margin: clamp(56px, 9vh, 96px) 0 0; background: #fff; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .values .in { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; padding: clamp(36px, 6vh, 56px) 0; text-align: center; }
+  @media (max-width: 780px) { .values .in { grid-template-columns: 1fr; gap: 22px; } }
+  .values .v .ico { font-size: 30px; }
+  .values .v h4 { font-size: 16.5px; font-weight: 700; margin-top: 12px; }
+  .values .v p { font-size: 13.5px; color: var(--faint); margin-top: 7px; line-height: 1.7; }
+
+  /* ── 下载 CTA ── */
+  .cta { text-align: center; padding: clamp(64px, 11vh, 110px) 24px clamp(48px, 8vh, 80px); }
+  .cta .hand { font-size: 54px; display: inline-block; animation: wave 2.6s ease-in-out infinite; transform-origin: 50% 85%; }
+  .cta h2 { font-size: clamp(26px, 5vw, 36px); font-weight: 800; letter-spacing: -1px; margin-top: 14px; }
+  .cta p { color: var(--faint); font-size: 15px; margin-top: 10px; }
+  .cta .note { font-size: 12.5px; color: #a1a1a6; margin-top: 16px; max-width: 460px; margin-left: auto; margin-right: auto; line-height: 1.7; }
+  .support { margin-top: 34px; }
+  .support .tip { font-size: 13.5px; color: var(--sub); }
+  .support .tip a { color: var(--blue); text-decoration: none; font-weight: 600; }
+
+  /* ── 首次授权三步 ── */
+  .perms { padding: clamp(20px, 4vh, 44px) 0 0; }
+  .perms .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  @media (max-width: 780px) { .perms .grid3 { grid-template-columns: 1fr; } }
+  .perm {
+    background: #fff; border: 1px solid var(--line); border-radius: 18px;
+    padding: 24px 22px; text-align: left;
+  }
+  .perm .ic { font-size: 28px; }
+  .perm h4 { font-size: 16px; font-weight: 750; margin-top: 12px; }
+  .perm h4 small { font-size: 11.5px; color: var(--faint); font-weight: 500; margin-left: 8px; }
+  .perm p { font-size: 13.5px; color: var(--sub); line-height: 1.75; margin-top: 8px; }
+
+  /* ── 支持作者 ── */
+  .support-sec { text-align: center; padding: clamp(48px, 8vh, 80px) 24px clamp(56px, 9vh, 88px); }
+  .support-sec h2 { font-size: clamp(22px, 4.4vw, 30px); font-weight: 800; letter-spacing: -1px; }
+  .support-sec p.desc { color: var(--faint); font-size: 14.5px; margin-top: 10px; line-height: 1.8; }
+  .qr-row { display: flex; gap: 26px; justify-content: center; margin-top: 30px; flex-wrap: wrap; }
+  .qr { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 16px; width: 200px; box-shadow: 0 10px 30px rgba(0,0,0,.05); }
+  .qr img { width: 100%; border-radius: 10px; display: block; }
+  .qr .name { font-size: 13.5px; font-weight: 650; margin-top: 11px; }
+  .qr .hint { font-size: 11.5px; color: var(--faint); margin-top: 3px; }
+
+  footer { border-top: 1px solid var(--line); padding: 26px 24px 34px; }
+  footer .in { max-width: 1080px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; font-size: 13px; color: #a1a1a6; }
+  footer a { color: inherit; text-decoration: none; }
+  footer a:hover { color: var(--sub); }
+  footer .brand-mini { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--sub); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-in">
+    <a class="brand" href="#">🖐 顺手 <span class="en">HANDY</span></a>
+    <div class="links">
+      <a class="hide-m" href="#features">九件小器</a>
+      <a class="hide-m" href="#download">下载</a>
+      <a class="hide-m" href="https://github.com/llitgq/shunshou">GitHub</a>
+      <a class="nav-btn" href="#download">免费下载</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <span class="big-hand">🖐</span>
+  <h1>常用小事，<em>顺手</em>就够</h1>
+  <p class="slogan">汇能于一 · 简去冗杂 · 应手而生</p>
+  <p class="desc">
+    macOS 菜单栏工具箱。截图标注、OCR 提字、截屏翻译、语音输入、贴边收纳、
+    剪贴板历史、快捷启动、图片工具、查找大文件——识别全在本机，不上传任何数据。
+  </p>
+  <div class="cta-row">
+    <a class="btn-primary" href="#download">免费下载 for macOS</a>
+    <a class="btn-ghost" href="https://github.com/llitgq/shunshou">在 GitHub 查看 →</a>
+  </div>
+  <p class="meta"><b>免费开源</b> · macOS 13 及以上 · 约 40MB</p>
+
+  <div class="shot">
+    <div class="cap"><span class="dot"></span>常驻菜单栏 · 点开即用</div>
+    <div class="panel">
+      <div class="p-head">
+        <span class="h">🖐</span>
+        <div class="p-cols">
+          <div><span class="l1">顺手</span><span class="l2">诸般小器</span></div>
+          <div><span class="l1" style="font-family:Georgia,serif;letter-spacing:1px;">Handy</span><span class="l2">顺手而生</span></div>
+        </div>
+        <span class="p-badge">● 运行中</span>
+      </div>
+      <div class="p-row"><span class="ic">✂️</span><span class="name">截图标注</span><span class="key">⌥A</span></div>
+      <div class="p-row"><span class="ic">📝</span><span class="name">OCR 提字</span><span class="key">⌥S</span></div>
+      <div class="p-row"><span class="ic">🌐</span><span class="name">截屏翻译</span><span class="key">⌥T</span></div>
+      <div class="p-row"><span class="ic">🎙</span><span class="name">语音输入</span><span class="tg"></span></div>
+      <div class="p-row"><span class="ic">📌</span><span class="name">贴边收纳</span><span class="tg"></span></div>
+      <div class="p-foot"><div>退出</div><div>设置</div><div>授权</div><div>关于</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">NINE TOOLS · ONE APP</div>
+      <h2>顺手的九件小器</h2>
+      <p>一件一件都做好，凑成一只顺手的工具箱</p>
+    </div>
+    <div class="grid">
+
+      <div class="card">
+        <div class="top"><span class="no">01</span><h3>截图标注</h3></div>
+        <p>框选截图原位定住，矩形、箭头、画笔、马赛克、文字随手标注；一键贴图置顶，滚动截长图。</p>
+        <div class="stage">
+          <div class="demo-shot">
+            <div class="pic"></div>
+            <div class="sel"></div>
+            <svg viewBox="0 0 100 60"><path d="M8,50 C30,48 38,30 62,14 L88,8 M88,8 L78,9 M88,8 L86,18"/></svg>
+          </div>
+        </div>
+        <div class="kbd-row"><kbd>⌥A</kbd> 截图 · 回车复制 · Esc 取消</div>
+      </div>
+
+      <div class="card">
+        <div class="top"><span class="no">02</span><h3>OCR 提字</h3></div>
+        <p>视频里的台词、图片里的文字、锁死的 PDF，框一下就变可复制文本。识别在本机，断网也能用。</p>
+        <div class="stage">
+          <div class="demo-ocr">
+            <div class="line l1"><span class="txt">会议定在周四下午三点</span><span class="blur" style="flex:0 0 22%"></span></div>
+            <div class="line l2"><span class="blur" style="flex:0 0 18%"></span><span class="txt">版本号 2.4.1 发布</span></div>
+            <div class="line l3"><span class="txt">联系邮箱见文末</span><span class="blur" style="flex:0 0 30%"></span></div>
+          </div>
+        </div>
+        <div class="kbd-row"><kbd>⌥S</kbd> 框选提字 · 自动分段对照</div>
+      </div>
+
+      <div class="card">
+        <div class="top"><span class="no">03</span><h3>截屏翻译</h3></div>
+        <p>框选屏幕任意区域，识别原文并整段翻译，原文译文逐段对照。系统翻译开箱即用，也可接自己的 Key。</p>
+        <div class="stage">
+          <div class="demo-tr">
+            <div class="pair">
+              <div class="zh">识别：<span>每一次截图都保存在本机</span></div>
+              <div class="en">Every screenshot stays on your Mac.</div>
+            </div>
+          </div>
+        </div>
+        <div class="kbd-row"><kbd>⌥T</kbd> 框选即译 · 可换方向</div>
+      </div>
+
+      <div class="card">
+        <div class="top"><span class="no">04</span><h3>语音输入</h3></div>
+        <p>按热键说话，松手成文直接打进光标处。改过的词自动记住，下次直接说对；极速精准双引擎可选。</p>
+        <div class="stage">
+          <div class="demo-voice">
+            <div class="waves"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="out">
+              <span style="animation-delay:.2s">把</span><span style="animation-delay:.5s">这</span><span style="animation-delay:.8s">段</span><span style="animation-delay:1.1s">话</span><span style="animation-delay:1.4s">打</span><span style="animation-delay:1.7s">进</span><span style="animation-delay:2s">输</span><span style="animation-delay:2.3s">入</span><span style="animation-delay:2.6s">框</span>
+            </div>
+            <div class="mic">⌥V 录音中</div>
+          </div>
+        </div>
+        <div class="kbd-row"><kbd>⌥V</kbd> 说话 · 再按结束</div>
+      </div>
+
+      <div class="card">
+        <div class="top"><span class="no">05</span><h3>APP 贴边收纳</h3></div>
+        <p>窗口拖到屏幕边缘自动收进边里，整桌清爽；碰一下边缘滑出，用完自动收回，不用最小化。</p>
+        <div class="stage">
+          <div class="demo-tuck">
+            <div class="screenedge"></div>
+            <div class="win"><div class="bar"><i></i><i></i><i></i></div></div>
+            <div class="handle"></div>
+          </div>
+        </div>
+        <div class="kbd-row">拖到屏幕边缘即收纳 · 碰边滑出</div>
+      </div>
+
+      <div class="card">
+        <div class="top"><span class="no">06</span><h3>剪贴板历史</h3></div>
+        <p>复制过的文字图片自动留档，随取随贴；密码一类敏感内容自动忽略，历史不外传。</p>
+        <div class="stage">
+          <div class="demo-clip">
+            <div class="list">
+              <div class="item top"><span class="mini">📄</span>顺手是 macOS 菜单栏工具箱</div>
+              <div class="item"><span class="mini">🔗</span>github.com/llitgq/shunshou</div>
+              <div class="item"><span class="mini">📝</span>会议定在周四下午三点…</div>
+            </div>
+          </div>
+        </div>
+        <div class="kbd-row"><kbd>⌘⇧V</kbd> 打开历史 · 回车回贴</div>
+      </div>
+
+      <div class="card">
+        <div class="top"><span class="no">07</span><h3>快捷启动</h3></div>
+        <p>给常用 App 绑一对快捷键，运行中一键调到前台，没运行直接启动；同一键绑多个 App 时弹选择面板。</p>
+        <div class="stage">
+          <div class="demo-launch">
+            <div class="keys"><kbd>⌘</kbd><kbd class="hit">⌥</kbd><kbd class="hit">A</kbd></div>
+            <div class="pop"><div class="sq"></div><div><div class="t1">备忘录</div><div class="t2">已调到前台</div></div></div>
+          </div>
+        </div>
+        <div class="kbd-row">自定义热键 · 支持连按两下触发</div>
+      </div>
+
+      <div class="card">
+        <div class="top"><span class="no">08</span><h3>图片工具</h3></div>
+        <p>拖图进来无损压缩、格式互转（PNG / JPG / WebP / HEIC / GIF），批量处理，透明底自动垫白。</p>
+        <div class="stage">
+          <div class="demo-img">
+            <div class="col"><div class="frame before"></div><span class="tag">8.2 MB</span></div>
+            <div class="arrow">➜</div>
+            <div class="col"><div class="frame after"></div><span class="tag">2.1 MB</span></div>
+            <div class="save">省 74% · 画质无损</div>
+          </div>
+        </div>
+        <div class="kbd-row">拖拽即压缩 · 批量转换</div>
+      </div>
+
+      <div class="card">
+        <div class="top"><span class="no">09</span><h3>查找大文件</h3></div>
+        <p>全盘可视化色块图 + 排行榜，哪块盘被什么占了一眼看穿；附带「可放心清 / 别动它」目录知识库。</p>
+        <div class="stage">
+          <div class="demo-big">
+            <div class="treemap"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="side">
+              <div class="row"><span>视频素材</span><b>86 GB</b></div>
+              <div class="row hl"><span>开发缓存</span><b>31 GB</b></div>
+              <div class="row"><span>微信数据</span><b>12 GB</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="kbd-row">色块图 · Top 100 · 一键进废纸篓</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="values">
+  <div class="wrap in">
+    <div class="v"><div class="ico">🔒</div><h4>数据不出本机</h4><p>语音识别、文字识别、翻译缓存全在本地完成，不联网也能用，不上传任何数据。</p></div>
+    <div class="v"><div class="ico">🍂</div><h4>轻巧不打扰</h4><p>常驻内存很小，随点随开；不弹广告、不推通知，用不上的时候感觉不到它。</p></div>
+    <div class="v"><div class="ico">🫶</div><h4>免费且开源</h4><p>全部功能免费使用，源代码开放在 GitHub；觉得好用，请作者喝杯咖啡就好。</p></div>
+  </div>
+</section>
+
+<section class="cta" id="download">
+  <span class="hand">🖐</span>
+  <h2>现在就顺手</h2>
+  <p>免费 · 开源 · macOS 13 及以上</p>
+  <div class="cta-row">
+    <a class="btn-primary" href="#">下载顺手（dmg）</a>
+    <a class="btn-ghost" href="https://github.com/llitgq/shunshou">GitHub ⭐</a>
+  </div>
+  <p class="note">首次打开如遇「无法验证开发者」：系统设置 → 隐私与安全性 → 点「仍要打开」即可（未签名应用的标准流程）。装好后按下面一步授权，马上能用。</p>
+  <div class="support">
+    <p class="tip">顺手完全免费。如果它帮你省过时间，欢迎 <a href="#support">请作者喝杯咖啡</a> ☕</p>
+  </div>
+</section>
+
+<section class="perms">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">SETUP · ONE MINUTE</div>
+      <h2>装好后的三个开关</h2>
+      <p>都在「系统设置 → 隐私与安全性」里，各拨一次就好</p>
+    </div>
+    <div class="grid3">
+      <div class="perm">
+        <div class="ic">🖥️</div>
+        <h4>屏幕录制<small>截图 / OCR / 翻译需要</small></h4>
+        <p>截图框选、屏幕取字、截屏翻译都要读屏。打开开关后重启顺手即可。</p>
+      </div>
+      <div class="perm">
+        <div class="ic">⌨️</div>
+        <h4>辅助功能<small>语音输入 / 贴边收纳需要</small></h4>
+        <p>语音输入要把文字打进当前输入框，贴边收纳要控制窗口位置，都在这一项里。</p>
+      </div>
+      <div class="perm">
+        <div class="ic">🎙</div>
+        <h4>麦克风<small>语音输入需要</small></h4>
+        <p>只在按住热键说话时才收音，识别全在本机，说完即弃，不会上传。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="support-sec" id="support">
+  <h2>请作者喝杯咖啡</h2>
+  <p class="desc">顺手免费开源，没有广告也不收费。<br>如果它帮你省过时间，一杯咖啡就是最实在的鼓励。</p>
+  <div class="qr-row">
+    <div class="qr">
+      <img src="assets/support-wechat.png" alt="微信收款码">
+      <div class="name">微信扫码</div>
+      <div class="hint">长按或截图识别</div>
+    </div>
+    <div class="qr">
+      <img src="assets/support-alipay.png" alt="支付宝收款码">
+      <div class="name">支付宝扫码</div>
+      <div class="hint">长按或截图识别</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="in">
+    <div class="brand-mini">🖐 顺手 Handy</div>
+    <div><a href="https://github.com/llitgq/shunshou">GitHub</a> · <a href="#">微信交流群</a> · <a href="#support">支持作者</a></div>
+    <div>© 2026 LLITGQ · 汇能于一，应手而生</div>
+  </div>
+</footer>
+
+</body>
+</html>

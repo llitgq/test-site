@@ -15,7 +15,6 @@
     overflow: hidden;
     user-select: none;
     cursor: crosshair;
-    touch-action: none;      /* 手机：手势全留给页面，防 iOS 滚动打断 pointermove */
   }
   /* 16:9 画布：最大化居中；开场推镜用 */
   #canvas16x9 {
@@ -209,7 +208,7 @@ function onMove(e) {
   switchDir(dir);
   targetT = mag * (vids[dir].duration || 3);
 }
-window.addEventListener("pointermove", onMove, { passive: true }); /* 鼠标+触摸统一（iPhone 手指滑动转头） */
+window.addEventListener("mousemove", onMove, { passive: true });
 
 /* rAF 扫描：currentTime 平滑追赶目标（不播放，纯扫描） */
 (function tick() {

@@ -106,10 +106,11 @@
 
 <script>
 /* ============ 终端分流：一族只加载自己需要的东西 ============ */
-/* 电脑/安卓（支持 WebM VP9 alpha）→ 四段视频 + 转头跟随
-   iOS（WebKit，WebM 放不了）→ 四段动画 WebP 循环（iOS 14+ 原生支持，真透明）
-   铁律：底图永远垫底，半身素材首帧真实渲染出来才隐藏底图——任何失败=全身静止，绝不露破图标 */
-const WEBM_OK = !!document.createElement("video").canPlayType('video/webm; codecs="vp9"');
+/* 电脑/安卓（真支持 WebM VP9 alpha）→ 四段视频 + 转头跟随
+   其余（iOS 全系 + 桌面 Safari）→ 四段动画 WebP（播一次定帧）
+   关键：Safari 能播 WebM 但不渲染 alpha 通道（黑底），canPlayType 会谎报——UA 排除之 */
+const isSafariUA = /^((?!chrome|android|crios|fxios|edgi).)*safari/i.test(navigator.userAgent);
+const WEBM_OK = !!document.createElement("video").canPlayType('video/webm; codecs="vp9"') && !isSafariUA;
 const base = document.getElementById("base");
 const canvasEl = document.getElementById("canvas16x9");
 

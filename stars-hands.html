@@ -81,26 +81,64 @@ function drawSky(t, dt) {
   ctx.globalAlpha = 1;
 }
 
-/* ---------- 手形：生图剪影预采样 JSON（人手暖色右伸入、机械手冷色左伸入） ---------- */
-let HAND_DATA = null, TIP_NX = 0.9;
+/* ---------- 手形：Material Symbols touch_app 图标（Apache 2.0）运行时点阵化 ----------
+   光栅化 → 连通域去波纹 → 网格采样 → 边缘标记。素材失败则手动画不启用，星空照常。 */
+const HAND_SVG = '<svg xmlns="http://www.w3.org/2000/svg" height="48" viewBox="0 -960 960 960" width="48"><path fill="#000" d="M445-80q-29 0-56-12t-45-35L127-403l21-23q14-15 34.5-18.5T221-438l99 53v-365q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v465l-144-77 156 198q10 12 23.76 18 13.76 6 29.24 6h205q38 0 64-26t26-64v-170q0-25.5-17.25-42.75T680-460H460v-60h219.65q50.14 0 85.25 35 35.1 35 35.1 85v170q0 63-43.5 106.5T650-80H445ZM203-665q-11.07-18.75-17.04-40.49-5.96-21.74-5.96-44.76 0-70.75 49.5-120.25T350-920q71 0 120.5 49.74t49.5 120.3q0 22.96-5.96 44.62Q508.07-683.68 497-665l-52-30q7-12 11-26t4-29.48Q460-796 427.88-828q-32.12-32-78-32T272-827.92q-32 32.09-32 77.92 0 15 4 29t11 26l-52 30Zm285 335Z"/></svg>';
 
-async function loadHands() {
-  const [h, r] = await Promise.all([
-    fetch("hands.human.json").then(x => x.json()),
-    fetch("hands.robot.json").then(x => x.json())
-  ]);
-  return { human: h, robot: r };
+let DOTS = null, TIP_NX = 0.9, TIP_NY = 0.5;
+
+async function buildDotsFromSVG() {
+  const S = 480;
+  const blob = new Blob([HAND_SVG], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = url; });
+  const c = document.createElement("canvas"); c.width = S; c.height = S;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  /* 旋转 90° 顺时针：食指朝右（左手形，从左伸入）；右手在渲染时镜像 */
+  g.translate(S / 2, S / 2); g.rotate(Math.PI / 2); g.drawImage(img, -S / 2, -S / 2, S, S);
+  const px = g.getImageData(0, 0, S, S).data;
+  const solid = (x, y) => x >= 0 && y >= 0 && x < S && y < S && px[(y * S + x) * 4 + 3] > 100;
+  /* 连通域：只保留最大块（去掉波纹弧等孤立件） */
+  const seen = new Uint8Array(S * S);
+  let best = null;
+  for (let sy = 0; sy < S; sy += 4) for (let sx = 0; sx < S; sx += 4) {
+    const idx = sy * S + sx;
+    if (seen[idx] || !solid(sx, sy)) continue;
+    const comp = [idx]; const q = [idx]; seen[idx] = 1;
+    while (q.length) {
+      const i = q.pop(); const x = i % S, y = (i / S) | 0;
+      for (const [nx2, ny2] of [[x+2,y],[x-2,y],[x,y+2],[x,y-2]]) {
+        if (nx2 < 0 || ny2 < 0 || nx2 >= S || ny2 >= S) continue;
+        const j = ny2 * S + nx2;
+        if (!seen[j] && solid(nx2, ny2)) { seen[j] = 1; comp.push(j); q.push(j); }
+      }
+    }
+    if (!best || comp.length > best.length) best = comp;
+  }
+  const inMain = new Set(best);
+  const dots = [], step = 6;
+  for (let y = 0; y < S; y += step)
+    for (let x = 0; x < S; x += step) {
+      if (!inMain.has(y * S + x)) continue;
+      const edge = !solid(x - step, y) || !solid(x + step, y) || !solid(x, y - step) || !solid(x, y + step);
+      dots.push([x / S, y / S, edge ? 1 : 0]);
+    }
+  URL.revokeObjectURL(url);
+  /* 指尖锚：nx 的 97 百分位；指尖高度=该处点的 ny 中位 */
+  const xs = dots.map(d => d[0]).sort((a, b) => a - b);
+  TIP_NX = xs[Math.floor(xs.length * 0.97)];
+  const tipYs = dots.filter(d => d[0] >= TIP_NX - 0.02).map(d => d[1]).sort((a, b) => a - b);
+  TIP_NY = tipYs[Math.floor(tipYs.length / 2)] || 0.5;
+  return dots;
 }
 
 /* ---------- 点阵手实例 ---------- */
-/* style: "dot" 圆点 | "binary" 0/1 字符 | "glyph" ✦· 字符 */
+/* style: "dot" 圆点 | "binary" 0/1 字符 | "glyph" ·+ 字符 */
 function makeHand(type, fromLeft) {
-  const d0 = HAND_DATA[type];
   return {
     type, fromLeft,
-    aspect: d0.w / d0.h, tip: d0.tip, dirn: d0.dir,
-    style: null,
-    dots: d0.dots.map(d => ({ nx: d[0], ny: d[1], edge: d[2],
+    dots: DOTS.map(d => ({ nx: d[0], ny: d[1], edge: d[2],
       delay: Math.random() * 0.55,
       sx: Math.random() * 2 - 1, sy: Math.random() * 2 - 1,   /* 散开偏移(相对屏) */
       bit: Math.random() < 0.5 ? "0" : "1",
@@ -111,36 +149,26 @@ function makeHand(type, fromLeft) {
 /* ---------- 编排 ---------- */
 /* 阶段: idle(2.0) → in(1.8 两手聚合滑入) → touch(1.4 电花) → out(1.2 弹开散开) → idle 换风格 */
 const STYLES = [["dot", "dot"], ["binary", "binary"], ["dot", "binary"], ["glyph", "glyph"]];
-/* 人手暖金 / 机械手冷蓝 —— 同一风格下也能一眼区分人机;[边缘色, 内部色] */
-const PALETTE = {
-  dot:    { human: ["#ffe2bd", "#a3714a"], robot: ["#d6f0ff", "#5f86b8"] },
-  binary: { human: ["#ffddb0", "#9a7a50"], robot: ["#cfe8ff", "#5f86b8"] },
-  glyph:  { human: ["#ffe9c4", "#8a7440"], robot: ["#c8ecff", "#46789a"] }
-};
 let styleIdx = 0, handL = null, handR = null;
 let stage = "idle", stageT = 0;
 const DUR = { idle: 2.0, in: 1.8, touch: 1.4, out: 1.2 };
 
 function newPair() {
   const [sl, sr] = STYLES[styleIdx % STYLES.length]; styleIdx++;
-  handL = makeHand("robot", true);   /* 机械手指右 → 从左伸入 */
-  handL.style = sl;
-  handR = makeHand("human", false);  /* 人手指左 → 从右伸入 */
-  handR.style = sr;
+  handL = makeHand("human", true);  handL.style = sl;
+  handR = makeHand("human", false); handR.style = sr;   /* 形同,风格区分;robot 形后续换 */
   stage = "in"; stageT = 0;
 }
 
-/* 手的目标几何:手高=SH*0.26,宽按各自剪影比例;以食指尖为锚贴中线(数据自带方向,不镜像) */
-const touchY = () => {
-  const tn = (HAND_DATA.human.tip[1] + HAND_DATA.robot.tip[1]) / 2;
-  return SH * (0.46 + (tn - 0.5) * 0.26);   /* 指尖在屏幕上的高度 */
-};
-function handGeom(hand) {
-  const h = SH * 0.26, w = h * hand.aspect;
+/* 手的目标几何:手高=SH*0.26;以食指尖为锚贴中线,右手水平镜像;TIP_NX/TIP_NY 由采样管线计算 */
+const touchY = () => 0.46 + (TIP_NY - 0.5) * 0.26;   /* 指尖在屏幕上的相对高度 */
+function handGeom(fromLeft) {
+  const h = SH * 0.26, w = h * (640 / 360);
   const cy = SH * 0.46;
   const tipGap = SW * 0.006;
-  /* 指尖(框内 tip[0] 处)落在中线∓gap;前臂自然伸出屏外 */
-  const x0 = (hand.fromLeft ? SW / 2 - tipGap : SW / 2 + tipGap) - hand.tip[0] * w;
+  /* fromLeft:指尖在框内 TIP_NX 处,让指尖落在中线-gap;fromRight 镜像后指尖在框内 (1-TIP_NX) 处 */
+  const x0 = fromLeft ? SW / 2 - tipGap - TIP_NX * w
+                      : SW / 2 + tipGap - (1 - TIP_NX) * w;
   return { x: x0, y: cy - h / 2, w, h };
 }
 
@@ -157,7 +185,7 @@ function emitSparks(x, y, n) {
 }
 
 function drawHand(hand, t, dt) {
-  const g = handGeom(hand);
+  const g = handGeom(hand.fromLeft);
   /* 聚合进度:仅 in 阶段推进;touch/out 保持完成态 */
   const prog = stage === "in" ? Math.min(1, stageT / DUR.in) : 1;
   /* 滑入位移:从屏外 lerp 到位 */
@@ -172,47 +200,45 @@ function drawHand(hand, t, dt) {
     scatter = leave;
   }
   const touchPct = stage === "touch" ? Math.min(1, stageT / 0.35) : 0;
-  const px = g.x + slide + outOff;   /* 手框滑入后的实际左缘(整框位移,备用) */
+  const px = g.x + slide + outOff;
 
   ctx.save();
   for (const d of hand.dots) {
-    /* 聚合:每点延迟从散位飞向目标;数据自带方向(human朝左/robot朝右),不镜像 */
+    /* 聚合:每点延迟从散位飞向目标;右手水平镜像 */
     const lp = Math.max(0, Math.min(1, (prog - d.delay * 0.5) / 0.5));
     const e = easeOutCubic(lp);
-    const nx = d.nx;
+    const nx = hand.fromLeft ? d.nx : 1 - d.nx;
     let x = g.x + nx * g.w + slide + outOff;
     let y = g.y + d.ny * g.h;
     x += (1 - e) * d.sx * SW * 0.35;
     y += (1 - e) * d.sy * SH * 0.35;
     if (scatter > 0) { x += d.sx * scatter * SW * 0.5; y += d.sy * scatter * SH * 0.5; }
-    /* touch:指尖附近点朝中线按压,按压感 */
-    const near = 1 - Math.abs(nx - hand.tip[0]);
-    if (touchPct > 0 && near > 0.86) x += (hand.dirn === "right" ? 1 : -1) * touchPct * SH * 0.012;
+    /* touch:指尖列向中线再压 6px,按压感(镜像下指尖在右,压向左) */
+    const tipness = hand.fromLeft ? (1 - nx) : nx;    /* 越接近指尖侧越大 */
+    if (touchPct > 0 && tipness > 0.86) x += (hand.fromLeft ? 1 : -1) * touchPct * SH * 0.012;
 
     const alpha = e;
     if (alpha <= 0.02) continue;
     const tw = 0.75 + 0.25 * Math.sin(t * 2.2 + d.ph);
 
-    /* 人手暖 / 机械手冷 */
-    const col = PALETTE[hand.style][hand.type];
     if (hand.style === "binary") {
       /* 0/1 数字点阵:边缘点更亮 */
       ctx.globalAlpha = alpha * (d.edge ? 0.95 : 0.5) * tw;
-      ctx.fillStyle = d.edge ? col[0] : col[1];
+      ctx.fillStyle = d.edge ? "#cfe8ff" : "#5f86b8";
       ctx.font = (d.edge ? 9 : 8) + "px monospace";
       ctx.fillText(d.bit, x, y);
       /* 偶尔翻滚 bit */
       if (Math.random() < 0.003) d.bit = Math.random() < 0.5 ? "0" : "1";
     } else if (hand.style === "glyph") {
       ctx.globalAlpha = alpha * (d.edge ? 0.95 : 0.45) * tw;
-      ctx.fillStyle = d.edge ? col[0] : col[1];
+      ctx.fillStyle = d.edge ? "#ffe9c4" : "#8a7440";
       ctx.font = (d.edge ? 12 : 9) + "px monospace";
       ctx.fillText(d.edge ? "✦" : "·", x, y);
     } else {
       /* dot 圆点 */
       const r = d.edge ? 2.1 : 1.3;
       ctx.globalAlpha = alpha * (d.edge ? 0.95 : 0.55) * tw;
-      ctx.fillStyle = d.edge ? col[0] : col[1];
+      ctx.fillStyle = d.edge ? "#eaf4ff" : "#6d90b9";
       ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
     }
   }
@@ -222,7 +248,7 @@ function drawHand(hand, t, dt) {
 function drawTouchFx(t, dt) {
   /* 触碰点:中线上光晕脉冲 + 电花 */
   if (stage !== "touch" && sparks.length === 0) return;
-  const cx = SW / 2, cy = touchY();
+  const cx = SW / 2, cy = SH * touchY();
   if (stage === "touch") {
     const p = Math.min(1, stageT / DUR.touch);
     const pulse = 0.5 + 0.5 * Math.sin(t * 9);
@@ -261,20 +287,18 @@ function frame(ms) {
     drawTouchFx(t, dt);
     if (stageT >= DUR[stage]) {
       if (stage === "out") { stage = "idle"; stageT = 0; handL = handR = null; sparks = []; }
-      else { stage = stage === "in" ? "touch" : "out"; stageT = 0; if (stage === "touch") emitSparks(SW / 2, touchY(), 24); }
+      else { stage = stage === "in" ? "touch" : "out"; stageT = 0; if (stage === "touch") emitSparks(SW / 2, SH * touchY(), 24); }
     }
   }
-  if (dbgEl) dbgEl.textContent = "stage=" + stage + " t=" + stageT.toFixed(2)
-    + " dots=" + (HAND_DATA ? (HAND_DATA.robot.dots.length + "+" + HAND_DATA.human.dots.length) : "loading")
-    + " sparks=" + sparks.length;
+  if (dbgEl) dbgEl.textContent = "stage=" + stage + " t=" + stageT.toFixed(2) + " dots=" + DOTS.length + " sparks=" + sparks.length;
   requestAnimationFrame(frame);
 }
 
 window.addEventListener("resize", resize);
 resize();
 /* 手形素材就绪才启用手动画；失败=只留星空，不露破绽 */
-loadHands().then(data => {
-  HAND_DATA = data;
+buildDotsFromSVG().then(dots => {
+  DOTS = dots;
   newPair();
   stage = "idle"; stageT = DUR.idle;
   /* 调试快进:?jump=touch / jump=in2 / jump=out —— 直接定格到指定阶段中段 */
@@ -282,7 +306,7 @@ loadHands().then(data => {
   if (jump) {
     newPair();
     if (jump === "in2")   { stage = "in";    stageT = DUR.in - 0.01; }
-    if (jump === "touch") { stage = "touch"; stageT = 0.5; emitSparks(SW / 2, touchY(), 24); }
+    if (jump === "touch") { stage = "touch"; stageT = 0.5; emitSparks(SW / 2, SH * touchY(), 24); }
     if (jump === "out")   { stage = "out";   stageT = 0.5; }
   }
 }).catch(() => { if (dbgEl) dbgEl.textContent = "hand asset failed"; });

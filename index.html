@@ -69,6 +69,18 @@
     width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px;
     background: rgba(255, 255, 255, .9); border-radius: 50%;
   }
+  /* 背景测试色板（顶部居中悬浮） */
+  #bgsw {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 99; display: flex; gap: 12px;
+    padding: 9px 14px; background: rgba(128, 128, 128, .35); border-radius: 22px;
+    backdrop-filter: blur(4px);
+  }
+  #bgsw button {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, .6); cursor: pointer; padding: 0;
+  }
+  #bgsw button.sel { outline: 2px solid #ffd54f; outline-offset: 2px; }
 </style>
 </head>
 <body>
@@ -84,6 +96,13 @@
     <video id="v-right" muted playsinline preload="auto"></video>
   </div>
   <div id="ring"></div>
+  <!-- 背景测试色板：默认黑，点击切换 -->
+  <div id="bgsw">
+    <button data-bg="#000000" class="sel" style="background:#000" aria-label="黑"></button>
+    <button data-bg="#ffffff" style="background:#fff" aria-label="白"></button>
+    <button data-bg="#e53935" style="background:#e53935" aria-label="红"></button>
+    <button data-bg="#00c853" style="background:#00c853" aria-label="绿"></button>
+  </div>
 
 <script>
 /* ============ 终端分流：一族只加载自己需要的东西 ============ */
@@ -116,22 +135,29 @@ if (WEBM_OK) {
   vids.up.addEventListener("requestVideoFrameCallback", () => { halfReady = true; trySwap(); }, { once: true });
   vids.up.addEventListener("loadeddata", () => { halfReady = true; trySwap(); }, { once: true });
 } else {
+  /* iOS：动画 WebP 播一次定帧。先全部预下载进缓存（不赋给显示元素），
+     首次指向某方向时才赋 src 开始播——播完定格，不循环 */
+  const preCache = {};
+  let preloaded = 0;
   for (const k of ["up", "down", "left", "right"]) {
-    const img = document.getElementById("w-" + k);
-    img.src = "assets/" + k + "-ios.webp";
-    wimgs[k] = img;
+    wimgs[k] = document.getElementById("w-" + k);
+    const pre = new Image();
+    preCache[k] = pre;
+    pre.onload = () => { if (++preloaded === 4) { halfReady = true; trySwap(); } };
+    pre.src = "assets/" + k + "-ios.webp";
   }
-  wimgs.up.addEventListener("load", () => { halfReady = true; trySwap(); }, { once: true });
 }
 
 /* 切换：推镜结束 且 半身已渲染，两个条件都齐才切；永不强切 */
 function trySwap() {
   if (current !== null || !zoomDone || !halfReady) return;
   base.style.visibility = "hidden";
-  const halfEl = WEBM_OK ? vids.up : wimgs.up;
+  let halfEl;
+  if (WEBM_OK) halfEl = vids.up;
+  else { halfEl = wimgs.up; halfEl.src = "assets/up-ios.webp"; } /* 此刻才开播 up，播完定帧 */
   halfEl.classList.add("on");
   current = "up";
-  followEnabled = true;   /* 两端都有动态素材，跟随都开 */
+  followEnabled = true;
 }
 
 /* 开场推镜（横竖屏同一套）：进场只看全身 → 推到方形贴底70%视口高 → 换半身 */
@@ -160,7 +186,8 @@ function switchDir(dir) {
   const oldEl = WEBM_OK ? vids[current] : wimgs[current];
   if (!oldEl) { current = dir; newEl.classList.add("on"); return; }
   if (!WEBM_OK) {
-    /* iOS 动画 WebP：各自循环播放中，显隐硬切即可 */
+    /* iOS 动画 WebP：首次指向才开播（预载已完成，赋 src 即播）；播过则保持定格显隐切换 */
+    if (!newEl.src) newEl.src = "assets/" + dir + "-ios.webp";
     newEl.classList.add("on");
     oldEl.classList.remove("on");
     current = dir;
@@ -227,6 +254,15 @@ function onTouch(e) {
 }
 window.addEventListener("touchstart", onTouch, { passive: true });
 window.addEventListener("touchmove", (e) => { e.preventDefault(); onTouch(e); }, { passive: false });
+
+/* 背景测试色板：点击换 body 背景 */
+document.querySelectorAll("#bgsw button").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.body.style.background = b.dataset.bg;
+    document.querySelectorAll("#bgsw button").forEach((x) => x.classList.remove("sel"));
+    b.classList.add("sel");
+  });
+});
 
 /* rAF 扫描：currentTime 平滑追赶目标（不播放，纯扫描） */
 (function tick() {

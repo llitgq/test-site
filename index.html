@@ -14,7 +14,6 @@
     justify-content: center;
     overflow: hidden;
     user-select: none;
-    cursor: crosshair;
   }
   /* 16:9 画布：最大化居中；开场推镜用 */
   #canvas16x9 {
@@ -56,19 +55,54 @@
     display: block;
   }
   #canvas16x9 video.on, #canvas16x9 .half.on { opacity: 1; }
-  /* 环形光标（暗底用亮色） */
-  #ring {
-    position: fixed; z-index: 9; pointer-events: none;
-    width: 30px; height: 30px; margin: -15px 0 0 -15px;
-    border: 1.5px solid rgba(255, 255, 255, .75);
+  /* 点赞按钮：深色内凹底 + 外圈渐变光晕（hover 旋转），推镜结束后浮现于人物胸口偏下
+     光晕必须是按钮的兄弟元素：按钮带 transform/opacity 会形成 stacking context，
+     ::after 的 z-index:-1 会被画到按钮背景之上糊进内部——外包一层，光晕垫底才对 */
+  #cta-wrap {
+    position: fixed; z-index: 20;
+    left: 50%; top: 50%;
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(12px) scale(.92);
+    pointer-events: none;
+    transition: opacity .6s ease, transform .6s cubic-bezier(.22, 1, .36, 1);
+  }
+  #cta-wrap.show {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+  }
+  #cta-wrap .glow {
+    position: absolute;
+    z-index: -1;
+    left: -8px; top: -8px;
     border-radius: 50%;
-    transition: transform .05s ease-out;
+    width: calc(100% + 16px);
+    height: calc(100% + 16px);
+    background: linear-gradient(35deg, rgb(47, 190, 238), rgb(218, 57, 143), rgb(139, 255, 23));
+    filter: blur(8px);
   }
-  #ring::after {
-    content: ""; position: absolute; left: 50%; top: 50%;
-    width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px;
-    background: rgba(255, 255, 255, .9); border-radius: 50%;
+  #cta-wrap:hover .glow { animation: rotcirclegr 1s linear infinite; }
+  @keyframes rotcirclegr { to { transform: rotate(360deg); } }
+  /* 按钮本体：与原版一致，无 transform 无 opacity，保持 stacking 纯净 */
+  #cta {
+    position: relative;
+    width: 64px; height: 64px;   /* 比两行文字（31px）大一圈 */
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;    /* 两行文字：链接 / 本人 */
+    gap: 3px;
+    border-radius: 100px;
+    border: none;
+    background: #333;
+    color: #e5e5e5;
+    box-shadow: inset 12px 12px 24px #080a10,
+                inset -12px -12px 24px #1b263e;
+    font: 600 14px/1 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    letter-spacing: .14em;
+    cursor: pointer;
   }
+  #cta:active { transform: scale(.95); }
+  #cta span { display: block; text-indent: .14em; }  /* 抵消每行末字字距 */
+  #cta:focus { outline: none; }
 </style>
 </head>
 <body>
@@ -82,8 +116,13 @@
     <video id="v-down"  muted playsinline preload="auto"></video>
     <video id="v-left"  muted playsinline preload="auto"></video>
     <video id="v-right" muted playsinline preload="auto"></video>
+    <img class="half" id="w-like" alt="">
+    <video id="v-like" muted playsinline preload="auto"></video>
   </div>
-  <div id="ring"></div>
+  <div id="cta-wrap">
+    <span class="glow" aria-hidden="true"></span>
+    <button id="cta" type="button"><span>链接</span><span>本人</span></button>
+  </div>
 
 <script>
 /* ============ 终端分流：一族只加载自己需要的东西 ============ */
@@ -94,6 +133,8 @@ const isSafariUA = /^((?!chrome|android|crios|fxios|edgi).)*safari/i.test(naviga
 const WEBM_OK = !!document.createElement("video").canPlayType('video/webm; codecs="vp9"') && !isSafariUA;
 const base = document.getElementById("base");
 const canvasEl = document.getElementById("canvas16x9");
+const cta = document.getElementById("cta");
+const ctaWrap = document.getElementById("cta-wrap");
 
 let zoomDone = false;     /* 推镜动画结束 */
 let halfReady = false;    /* 半身素材首帧已真实渲染（图片 onload / 视频 rqvfc） */
@@ -103,6 +144,9 @@ let switching = false;
 let followEnabled = false;
 const vids = {};
 const wimgs = {};
+const vLike = document.getElementById("v-like");
+const wLike = document.getElementById("w-like");
+let playing = false;      /* 点赞播放/定格态 */
 
 if (WEBM_OK) {
   for (const k of ["up", "down", "left", "right"]) {
@@ -116,6 +160,10 @@ if (WEBM_OK) {
   /* 首帧真的画到屏上才算就绪（rqvfc 比 readyState 严格；loadeddata 兜底老浏览器） */
   vids.up.addEventListener("requestVideoFrameCallback", () => { halfReady = true; trySwap(); }, { once: true });
   vids.up.addEventListener("loadeddata", () => { halfReady = true; trySwap(); }, { once: true });
+  /* 点赞素材预载（不显示，点了才播） */
+  vLike.src = "assets/赞.webm";
+  vLike.load();
+  vLike.addEventListener("loadeddata", () => { vLike.currentTime = 0; }, { once: true });
 } else {
   /* iOS：动画 WebP 播一次定帧。先全部预下载进缓存（不赋给显示元素），
      首次指向某方向时才赋 src 开始播——播完定格，不循环 */
@@ -128,6 +176,8 @@ if (WEBM_OK) {
     pre.onload = () => { if (++preloaded === 4) { halfReady = true; trySwap(); } };
     pre.src = "assets/" + k + "-ios.webp";
   }
+  /* 点赞动画 WebP 预下载进缓存；显示元素 w-like 此刻不赋 src（同四方向定式） */
+  new Image().src = "assets/赞-ios.webp";
 }
 
 /* 切换：推镜结束 且 半身已渲染，两个条件都齐才切；永不强切 */
@@ -140,6 +190,8 @@ function trySwap() {
   halfEl.classList.add("on");
   current = "up";
   followEnabled = true;
+  placeCta();
+  ctaWrap.classList.add("show");   /* 人物现身即浮现按钮 */
 }
 
 /* 开场推镜（横竖屏同一套）：进场只看全身 → 推到方形贴底视口定比 → 换半身 */
@@ -161,8 +213,9 @@ window.addEventListener("resize", () => {
   if (canvasEl.classList.contains("zoomed")) applyZoom();
 });
 canvasEl.addEventListener("transitionend", (e) => {
-  if (e.propertyName === "transform" && canvasEl.classList.contains("zoomed")) { zoomDone = true; trySwap(); }
-}, { once: true });
+  if (e.propertyName !== "transform" || !canvasEl.classList.contains("zoomed")) return;
+  zoomDone = true; trySwap(); placeCta();   /* 不再 once：resize 后每次过渡结束都重新贴位 */
+});
 setTimeout(() => { zoomDone = true; trySwap(); }, 2300); /* transitionend 不发的环境兜底；trySwap 幂等 */
 
 const DEAD = 0.09;        // 中心死区（正脸）
@@ -199,7 +252,60 @@ function switchDir(dir) {
   }
 }
 
-const ring = document.getElementById("ring");
+/* 玻璃按钮：人物素材屏幕框中心再往下 12% 素材高（胸口偏下）
+   用画布 rect × 百分比算，不依赖素材元素尺寸（iOS WebP 未赋 src 时无尺寸）；
+   只在推镜终态后调用，此时 rect 含 transform 正是要的屏幕坐标 */
+function placeCta() {
+  const c = canvasEl.getBoundingClientRect();
+  if (!c.width) return;
+  const s = c.width * 0.2809;                       /* 素材屏幕高（=宽，方形） */
+  ctaWrap.style.left = (c.left + c.width * 0.4942) + "px";
+  ctaWrap.style.top  = (c.top + c.height * 0.1139 + s * 0.62) + "px";   /* 0.5 中心 + 0.12 下移 */
+}
+
+/* 点"链接本人"：停跟随 → 切点赞素材播一遍，播完定格尾帧 */
+function enterPose() {
+  if (playing || current === null) return;
+  playing = true;
+  followEnabled = false;
+  ctaWrap.classList.remove("show");       /* 按钮让位，别盖住动作 */
+  const cur = WEBM_OK ? vids[current] : wimgs[current];
+  if (cur) cur.classList.remove("on");
+  if (WEBM_OK) {
+    vLike.currentTime = 0;
+    vLike.play();                          /* 不 loop：ended 即停在尾帧 */
+    vLike.classList.add("on");
+  } else {
+    /* 关键：src 同值赋回不会重新加载（动画 WebP 停在上次尾帧）——先卸载再赋回才重播 */
+    wLike.removeAttribute("src");
+    void wLike.offsetWidth;                /* 强制同步布局，确认卸载生效 */
+    wLike.src = "assets/赞-ios.webp";
+    wLike.classList.add("on");
+  }
+}
+
+/* 点其他任意处：取消静止，恢复当前方向素材与鼠标跟随 */
+function exitPose() {
+  if (!playing) return;
+  playing = false;
+  if (WEBM_OK) {
+    vLike.classList.remove("on");
+    vLike.pause();
+  } else {
+    wLike.classList.remove("on");
+  }
+  const cur = WEBM_OK ? vids[current] : wimgs[current];
+  if (cur) {
+    if (!WEBM_OK && !cur.src) cur.src = "assets/" + current + "-ios.webp";
+    cur.classList.add("on");
+  }
+  followEnabled = true;
+  placeCta();
+  ctaWrap.classList.add("show");
+}
+
+cta.addEventListener("click", (e) => { e.stopPropagation(); enterPose(); });
+document.addEventListener("click", () => { if (playing) exitPose(); });
 
 /* 方向判定（两端共用）：x,y 相对当前半身素材屏幕框的归一化偏移 */
 function judge(x, y) {
@@ -223,8 +329,6 @@ function judge(x, y) {
 }
 
 function onMove(e) {
-  ring.style.left = e.clientX + "px";
-  ring.style.top  = e.clientY + "px";
   if (!followEnabled) return;
   judge(e.clientX, e.clientY);
 }
@@ -234,8 +338,6 @@ window.addEventListener("mousemove", onMove, { passive: true });
 function onTouch(e) {
   const t = e.touches[0];
   if (!t) return;
-  ring.style.left = t.clientX + "px";
-  ring.style.top  = t.clientY + "px";
   if (!followEnabled) return;
   judge(t.clientX, t.clientY);
 }
@@ -244,7 +346,7 @@ window.addEventListener("touchmove", (e) => { e.preventDefault(); onTouch(e); },
 
 /* rAF 扫描：currentTime 平滑追赶目标（不播放，纯扫描） */
 (function tick() {
-  if (current && WEBM_OK && !switching) {
+  if (current && WEBM_OK && !switching && !playing) {
     const v = vids[current];
     const d = v.duration || 3;
     const t = Math.min(targetT, d - 0.001);

@@ -142,19 +142,24 @@ function trySwap() {
   followEnabled = true;
 }
 
-/* 开场推镜（横竖屏同一套）：进场只看全身 → 推到方形贴底70%视口高 → 换半身 */
-setTimeout(() => {
-  const r = canvasEl.getBoundingClientRect();
-  /* 方形视频：高占画布 49.94%（=28.09%×16/9），底缘 61.33%，中心 x 49.42% */
+/* 开场推镜（横竖屏同一套）：进场只看全身 → 推到方形贴底视口定比 → 换半身 */
+function applyZoom() {
+  /* 用布局值（offset*）而非 getBoundingClientRect：后者含当前 transform，zoomed 态重算会失准；
+     布局值自动跟随 42dvh 动态视口（地址栏收展画布会挪），resize 重算即贴回底缘 */
+  const top0 = canvasEl.offsetTop, h0 = canvasEl.offsetHeight, w0 = canvasEl.offsetWidth, left0 = canvasEl.offsetLeft;
   const portrait = window.matchMedia("(orientation: portrait)").matches;
-  const k  = window.innerHeight / (r.height * 0.4994) * (portrait ? 0.441 : 0.56); // 电脑=56%（0.7再缩20%）；手机=44%，贴底居中不变
-  const dy = window.innerHeight - (r.top + r.height * 0.6133);
-  const dx = window.innerWidth / 2 - (r.left + r.width * 0.4942);
+  const k  = window.innerHeight / (h0 * 0.4994) * (portrait ? 0.441 : 0.56); // 电脑=56%（0.7再缩20%）；手机=44%，贴底居中不变
+  const dy = window.innerHeight - (top0 + h0 * 0.6133);
+  const dx = window.innerWidth / 2 - (left0 + w0 * 0.4942);
   canvasEl.style.setProperty("--zoom-k",  k.toFixed(4));
   canvasEl.style.setProperty("--zoom-dy", dy.toFixed(1) + "px");
   canvasEl.style.setProperty("--zoom-dx", dx.toFixed(1) + "px");
-  canvasEl.classList.add("zoomed");
-}, 1100);
+}
+setTimeout(() => { applyZoom(); canvasEl.classList.add("zoomed"); }, 1100);
+/* 视口变化（手机地址栏收展/旋转/分屏）：zoomed 态重算推镜参数，半身始终贴底居中 */
+window.addEventListener("resize", () => {
+  if (canvasEl.classList.contains("zoomed")) applyZoom();
+});
 canvasEl.addEventListener("transitionend", (e) => {
   if (e.propertyName === "transform" && canvasEl.classList.contains("zoomed")) { zoomDone = true; trySwap(); }
 }, { once: true });
